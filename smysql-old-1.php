@@ -1,6 +1,6 @@
 <?php
   /**
-   * Version for PHP 5.4 and later versions.
+   * Version for PHP 5.3 and earlier versions.
   **/
   class Smysql {
     private $connect;
