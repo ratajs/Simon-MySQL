@@ -1,4 +1,7 @@
 <?php
+  /**
+   * Version for PHP 5.4 and later versions.
+  **/
   class Smysql {
     private $connect;
     private $result;
