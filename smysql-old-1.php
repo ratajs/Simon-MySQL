@@ -3,8 +3,8 @@
    * Version for PHP 5.3 and earlier versions.
   **/
   class Smysql {
-    private $connect;
-    private $result;
+    protected $connect;
+    protected $result;
     protected $host;
     protected $user;
     protected $password;
@@ -29,29 +29,29 @@
       $this->db = $database;
       $this->connect = @mysql_connect($host, $user, $password, true);
       if(!$this->connect)
-        die("Can't connect to MySQL");
+        trigger_error("Can't connect to MySQL");
       if(!@mysql_select_db($database, $this->connect)) {
         if(str_replace("create[", NULL, $database)!=$database && end(str_split($databese))=="]") {
           $new = str_replace("]", NULL, str_replace("create[", NULL, $database));
           if(!mysql_query("
             CREATE DATABASE $new
           ", $this->connect))
-          die("Can't create database " . $new);
+          trigger_error("Can't create database " . $new);
           mysql_select_db($new, $this->connect);
         }
         else {
-          die("Can't select database MySQL");
+          trigger_error("Can't select database MySQL");
           mysql_close($this->connect);
         };
       };
       $this->charset("utf8");
     }
     
-    public function escapeString($string) {
+    public function escape($string) {
       if(is_array($string)) {
         $r = array();
         foreach($string as $k => $v) {
-          $r[$k] = $this->escapeString($v);
+          $r[$k] = $this->escape($v);
         };
         return $r;
       };
@@ -59,16 +59,47 @@
     }
     
     public function reload() {
-      $this->connect = @mysql_connect($this->host, $this->user, $this->password, true);
+      $this->__construct();
     }
         
     public function query($query, $debug = false) {
-      if(empty($this->db))
-        die("Simon's MySQL error <strong>(" . $fnc . "):</strong> No database selected");
+      if(empty($this->db) && !in_array($fnc, new array("__construct", "changeDB")))
+        trigger_error("Simon's MySQL error <strong>(" . $fnc . "):</strong> No database selected");
       $this->result = mysql_query($query, $this->connect);
       if(!$this->result)
-        die("Error in MySQL: " . mysql_error());
+        trigger_error("Error in MySQL: " . mysql_error());
       return $this->result;
+    }
+    
+    public function queryf($q, $a) {
+      foreach($a as $k => $v) {
+        $q = str_replace("%" . $k, $this->escape($v), $q);
+      };
+      return $this->query($q, "Queryf");
+    }
+    
+    public function dbList() {
+      $result = $this->result;
+      $ld = mysql_list_dbs($this->connect);
+      $r = new array();
+      while($row = mysql_fetch_object($ld)) {
+        array_push($r, $row->Database);
+      };
+      $this->result = $result;
+      return $r;
+    }
+    
+    public function tableList() {
+      if(empty($this->db))
+        trigger_error("Simon's MySQL error <strong>(tableList):</strong> No database selected");
+      $result = $this->result;
+      $this->query("SHOW TABLES FROM $this->db", "tableList");
+      $r = new array();
+      while($f = $this->fetchArray()) {
+        array_push($r, $f[0]);
+      };
+      $this->result = $result;
+      return $r;
     }
     
     public function result() {
@@ -79,21 +110,25 @@
       mysql_set_charset($charset);
     }
     
-    public function fetch() {
-      return mysql_fetch_object($this->returnReturn());
+    public function fetch($id = false) {
+      if($id===false)
+        return mysql_fetch_object($this->returnReturn());
+      return mysql_fetch_object($id);
     }
     
-    public function fetchArray() {
-      return mysql_fetch_array($this->returnReturn());
+    public function fetchArray($id = false) {
+      if($id===false)
+        return mysql_fetch_array($this->returnReturn());
+      return mysql_fetch_array($id);
     }
     
     public function deleteDB($db, $close = false) {
       if($db==$this->db)
-        die("You can't delete current database, you must change database before deleting this database!");
+        trigger_error("You can't delete current database, you must change database before deleting this database!");
       if(!$this->query("
         DROP DATABASE $db
       ")) {
-        die("Can't delete database " . $db);
+        trigger_error("Can't delete database " . $db);
         return false;
       }
       else {
@@ -110,9 +145,9 @@
       $this->__construct($this->host, $this->user, $this->password);
     }
     
-    public function fetchAll() {
+    public function fetchAll($id = false) {
       $return = array();
-      while($row = $this->fetch()) {
+      while($row = $this->fetch($id)) {
         array_push($return, $row);
       };
       return $return;
@@ -140,8 +175,9 @@
     public function selectJoin($table, $join, $array, $all = true, $joinType = 0, $order = NULL, $orderType = "ASC", $cols = array("*")) {
       switch($joinType) {
         case 0: $jt = "INNER"; break;
-        case 1: $jt = "LEFT"; break;
-        default: $jt = "RIGHT"; break;
+        case 1: $jt = "LEFT OUTER"; break;
+        case 2: $jt = "RIGHT OUTER"; break;
+        default: $jt = "FULL OUTER"; break;
       };
       $bool = $this->getBool($array, $all);
       $colsValue = implode(", ", $cols);
@@ -175,7 +211,7 @@
         $colString = " (";
         foreach($cols as $key => $value) {
           if($key!=0) $valueString.= ", ";
-          $colString.= "'" . $this->escapeString($value) . "'";
+          $colString.= "'" . $this->escape($value) . "'";
         };
         $colString.= ")";
       };
@@ -184,7 +220,7 @@
         $av = array_values($values);
         $ak = array_keys($values, $av[0]);
         if($key!=$ak[0]) $valueString.= ", ";
-        $valueString.= "'" . $this->escapeString($value) . "'";
+        $valueString.= "'" . $this->escape($value) . "'";
       };
       $r = $this->query("
         INSERT INTO $table$colString VALUES ($valueString)
@@ -204,7 +240,7 @@
       foreach($array as $key => $value) {
         if($string!=NULL) 
           $string.= ", ";
-        $string.= $key . "='" . $this->escapeString($value, $this->connect) . "'";
+        $string.= $key . "='" . $this->escape($value, $this->connect) . "'";
       };
       return $this->query("
         UPDATE $table SET $string WHERE $bool
@@ -237,9 +273,42 @@
       );
     }
     
+    public function selectAll($table) {
+      $r = $this->result;
+      $this->select($table);
+      $f = $this->fetchAll();
+      $this->result = $r;
+      return $f;
+    }
+    
+    public function fetchWhere($table, $bool, $all = true) {
+      $r = $this->result;
+      $this->selectWhere($table, $bool, $all);
+      $f = $this->fetch();
+      $this->result = $r;
+      return $f;
+    }
+    
+    public function read($table, $bool = array(), $all = true) {
+      $r = $this->result;
+      if($bool===array() {
+      $this->result = $r;
+        return $this->selectAll($table);
+      };
+      $this->selectWhere($table, $bool, $all);
+      $f = $this->fetchAll();
+      $this->result = $r;
+      if($f===array())
+        return false;
+      if(count($f)==1)
+        return $f[0];
+      return $f;
+    }
+    
     public function getDetails($table, $columnNm) {
+      $r = $this->result;
       if(empty($this->db))
-        die("Simon's MySQL error <strong>(getDetails):</strong> No database selected");
+        trigger_error("Simon's MySQL error <strong>(getDetails):</strong> No database selected");
       $result = $this->result;
       $this->query("
         SHOW COLUMNS FROM $table
@@ -252,16 +321,17 @@
         SELECT '$column' AS 'name', MIN($column) AS 'firstValue', MAX($column) AS 'lastValue', COUNT($column) AS 'count', SUM($column) AS 'suma', '$columnType' AS 'dataType', '$columnRealType' AS 'extras' FROM $table
       ");
       if(!$result)
-        die("Error in MySQL: " . mysql_error());
+        trigger_error("Simon's MySQL error <strong>(getDetails):</strong> Error in MySQL: " . mysql_error());
+      $this->result = $r;
       return mysql_fetch_object($result);
     }
     
-    public function createTable($table, $names, $types, $lenghts, $nulls, $others = []) {
-      $parameters = $this->getParameters($names, $types, $lengths, $nulls, $others);
+    public function createTable($table, $names, $types, $lenghts, $nulls, $primary = NULL, $uniques = [], $others = []) {
+      $parameters = $this->getParameters($names, $types, $lengths, $nulls, $uniques, $others);
       $valueString = implode(",\n", $parameters);
       return $this->query("
         CREATE TABLE $table ($valueString)
-      ");
+      " . empty($primary) ? NULL : ", PRIMARY KEY ($primary)");
     }
     
     public function renameTable($table, $newname) {
@@ -276,7 +346,7 @@
       ");
     }
     
-    private function getParameters($names, $types, $lengths, $nulls, $others = []) {
+    private function getParameters($names, $types, $lengths, $nulls, $uniques, $others = array()) {
       if(count($names)==count($types) && count($names)==count($nulls)) {
         if(count($names)==count($others)) {
           $r = [];
@@ -286,9 +356,9 @@
             $n = $nulls[$k] ? "NULL" : "NOT NULL";
             $o = $others[$k];
             if(empty($l))
-              $r[] = "$v $t $n $o";
+              array_push($r, "$v $t $n" . (in_array($v, $uniques) ? NULL : " UNIQUE") . " $o");
             else
-              $r[] = "$v $t($v) $n $o";
+              array_push($r, "$v $t($l) $n" . (in_array($v, $uniques) ? NULL : " UNIQUE") . " $o");
           };
           return $r;
         }
@@ -315,10 +385,11 @@
         foreach($a as $k => $v) {
           if(is_array($v)) {
             foreach($v as $k2 => $v2) {
+              $col = false;
               if($v2[0]=="`" && end(str_split($v2))=="`")
                 $col = true;
-              $v3 = $this->escapeString($v2);
-              $r.= "`" . $this->escapeString($k) . "`";
+              $v3 = $this->escape($v2);
+              $r.= "`" . $this->escape($k) . "`";
               if(is_numeric($v3)) {
                 $r.= " = ";
                 $v3 = intval($v3);
@@ -335,8 +406,8 @@
             $col = false;
             if($v[0]=="`" && end(str_split($v))=="`")
               $col = true;
-            $v = $this->escapeString($v);
-            $r.= "`" . $this->escapeString($k) . "`";
+            $v = $this->escape($v);
+            $r.= "`" . $this->escape($k) . "`";
             if(is_numeric($v)) {
               $r.= " = ";
               $v = (int) $v;
@@ -356,7 +427,7 @@
         
     public function __destruct() {
       @mysql_free_result($this->result);
-      @mysql_close($this->connect);
+      mysql_close($this->connect);
     }
   };
   function Smysql($host, $user, $password, $db, &$object = "return") {
