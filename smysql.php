@@ -2,9 +2,17 @@
   /**
    * Version for PHP 5.4 and later versions.
   **/
+ class SmysqlException extends Exception {};
+  set_exception_handler(function($e) {
+    if($e instanceof SmysqlException) {
+      trigger_error("<strong>Simon's MySQL error</strong> " . $e->getMessage());
+    }
+    else
+      throw new Exception($e->getMessage());
+  });
   class Smysql {
-    private $connect;
-    private $result;
+    protected $connect;
+    protected $result;
     protected $host;
     protected $user;
     protected $password;
@@ -27,9 +35,9 @@
       $this->user = $user;
       $this->password = $password;
       $this->db = $database;
-      $this->connect = new mysqli($host, $user, $password);
+      $this->connect = @new mysqli($host, $user, $password);
       if($this->connect->connect_errno || !$this->connect)
-        die("Simon's MySQL error <strong>(__construct):</strong> Can't connect to MySQL: " . $this->connect->connect_error);
+        throw new SmysqlException("(__construct): Can't connect to MySQL: " . $this->connect->connect_error);
       if(!empty($database)) {
         if(!$this->connect->select_db($database)) {
           if(str_replace("create[", NULL, $database)!=$database && end(str_split($databese))=="]") {
@@ -37,11 +45,10 @@
             if(!$this->query("
               CREATE DATABASE $new
             ", "__construct"))
-            die("Simon's MySQL error <strong>(__construct):</strong> Can't create database " . $new);
-            $this->connect->close();
+              throw new SmysqlException("(__construct): Can't create database " . $new);
           }
           else {
-            die("Simon's MySQL error <strong>(__construct):</strong> Can't select database MySQL");
+            throw new SmysqlException("(__construct): Can't select database MySQL");
             $this->connect->close();
           };
         };
@@ -49,10 +56,10 @@
       $this->charset("utf8");
     }
     
-    public function escapeString($string) {
+    public function escape($string) {
       if(is_array($string)) {
         foreach($string as $k => $v) {
-          $r[$k] = $this->escapeString($v);
+          $r[$k] = $this->escape($v);
         };
         return $r;
       };
@@ -60,16 +67,47 @@
     }
     
     public function reload() {
-      $this->connect = new mysqli($this->host, $this->user, $this->password, true);
+      $this->__construct();
     }
     
     public function query($query, $fnc = "Query") {
-      if(empty($this->db))
-        die("Simon's MySQL error <strong>(" . $fnc . "):</strong> No database selected");
+      if(empty($this->db) && !in_array($fnc, ["__construct", "changeDB", "dbList"]))
+        throw new SmysqlException("(" . $fnc . "): No database selected");
       $this->result = $this->connect->query($query);
       if($this->connect->errno)
-        die("Simon's MySQL error <strong>(" . $fnc . "):</strong> Error in MySQL: " . $this->connect->error);
+        throw new SmysqlException("(" . $fnc . "): Error in MySQL: " . $this->connect->error . " <strong>SQL command:</strong> " . $query);
       return $this->result;
+    }
+    
+    public function queryf($q, $a) {
+      foreach($a as $k => $v) {
+        $q = str_replace("%" . $k, $this->escape($v), $q);
+      };
+      return $this->query($q, "Queryf");
+    }
+    
+    public function dbList() {
+      $result = $this->result;
+      $this->query("SHOW DATABASES", "dbList");
+      $r = [];
+      while($f = $this->fetch()) {
+        $r[] = $f->Database;
+      };
+      $this->result = $result;
+      return $r;
+    }
+    
+    public function tableList() {
+      if(empty($this->db))
+        throw new SmysqlException("(tableList): No database selected");
+      $result = $this->result;
+      $this->query("SHOW TABLES FROM $this->db", "tableList");
+      $r = [];
+      while($f = $this->fetchArray()) {
+        $r[] = $f[0];
+      };
+      $this->result = $result;
+      return $r;
     }
     
     public function result() {
@@ -81,34 +119,40 @@
       return $charset;
     }
     
-    public function fetch() {
-      return $this->result->fetch_object();
+    public function fetch($id = false) {
+      if($id===false)
+        return $this->result->fetch_object();
+      return $id->fetch_object();
     }
     
-    public function fetchArray() {
-      return $this->result->fetch_array();
+    public function fetchArray($id = false) {
+      if($id===false)
+        return $this->result->fetch_array();
+      return $id->fetch_array();
     }
     
     public function deleteDB($db, $close = false) {
       if($db==$this->db)
-        die("Simon's MySQL error (deleteDB): You can't delete current database");
+        throw new SmysqlException("(deleteDB): You can't delete current database");
       if($this->query("DROP DATABASE $db")) {
         return true;
       }
       else {
-        die("Simon's MySQL error (deleteDB): Can't delete database " . $db);
+        throw new SmysqlException("(deleteDB): Can't delete database " . $db);
         return false;
       };
     }
     
     public function changeDB($newDB) {
-      $this->__destruct();
+      if($this->result instanceof mysqli_result)
+        $this->result->free();
+      $this->connect->close();
       $this->__construct($this->host, $this->user, $this->password, $newDB);
     }
     
-    public function fetchAll() {
+    public function fetchAll($id = false) {
       $return = [];
-      while($row = $this->fetch()) {
+      while($row = $this->fetch($id)) {
         $return[] = $row;
       };
       return $return;
@@ -136,8 +180,9 @@
     public function selectJoin($table, $join, $array, $all = true, $joinType = 0, $order = NULL, $orderType = "ASC", $cols = ["*"]) {
       switch($joinType) {
         case 0: $jt = "INNER"; break;
-        case 1: $jt = "LEFT"; break;
-        default: $jt = "RIGHT"; break;
+        case 1: $jt = "LEFT OUTER"; break;
+        case 2: $jt = "RIGHT OUTER"; break;
+        default: $jt = "FULL OUTER"; break;
       };
       $bool = $this->getBool($array, $all, true);
       $colsValue = implode(", ", $cols);
@@ -170,19 +215,19 @@
         $colString = " (";
         foreach($cols as $key => $value) {
           if($key!=0) $colString.= ", ";
-          $colString.= "'" . $this->escapeString($value) . "'";
+          $colString.= "'" . $this->escape($value) . "'";
         };
         $colString.= ")";
       };
       $valueString = NULL;
       foreach($values as $key => $value) {
         if($key!=array_keys($values, array_values($values)[0])[0]) $valueString.= ", ";
-        $valueString.= "'" . $this->escapeString($value) . "'";
+        $valueString.= "'" . $this->escape($value) . "'";
       };
       $r = $this->query("
         INSERT INTO $table$colString VALUES ($valueString)
       ", "insert");
-      return ($retId ? $this->connect->insert_id() : $r);
+      return ($retId ? $this->connect->insert_id : $r);
     }
     
     public function delete($table, $array, $all = true) {
@@ -198,7 +243,7 @@
       foreach($array as $key => $value) {
         if($string!=NULL) 
           $string.= ", ";
-        $string.= $key . "='" . $this->escapeString($value) . "'";
+        $string.= $key . "='" . $this->escape($value) . "'";
       };
       return $this->query("
         UPDATE `$table` SET $string WHERE $bool
@@ -231,9 +276,48 @@
       , "change");
     }
     
+    public function selectAll($table) {
+      $r = $this->result;
+      $this->select($table);
+      $f = $this->fetchAll();
+      $this->result = $r;
+      return $f;
+    }
+    
+    public function fetchWhere($table, $bool, $all = true) {
+      $r = $this->result;
+      $this->selectWhere($table, $bool, $all);
+      $f = $this->fetch();
+      $this->result = $r;
+      return $f;
+    }
+    
+    public function read($table, $bool = [], $all = true) {
+      $r = $this->result;
+      $f = new stdClass();
+      $f->someKey = "nonfalse";
+      if($bool===[]) {
+        $f = $this->selectAll($table);
+        $this->result = $r;  
+      }
+      elseif(!$this->exists($table, $bool, $all))
+        return false;
+      else {
+        $this->selectWhere($table, $bool, $all);
+        $f = $this->fetchAll();
+      };
+      if($f===new stdClass())
+        return false;
+      $this->result = $r;
+      if(count($f)==1)
+        return $f[0];
+      return $f;
+    }
+    
     public function getDetails($table, $columnNm) {
+      $r = $this->result;
       if(empty($this->db))
-        die("Simon's MySQL error <strong>(getDetails):</strong> No database selected");
+        throw new SmysqlException("(getDetails): No database selected");
       $result = $this->result;
       $this->query("
         SHOW COLUMNS FROM `$table`
@@ -245,15 +329,17 @@
         SELECT $column AS 'name', MIN($column) AS 'firstValue', MAX($column) AS 'lastValue', COUNT($column) AS 'count', SUM($column) AS 'suma', '$columnType' AS 'dataType', '$columnRealType' AS 'extras' FROM $table
       ");
       if(!$result)
-        die("Simon's MySQL error: <strong>(getDetails):</strong> Error in MySQL: " . $this->connect->error);
+        throw new SmysqlException("Simon's MySQL error: (getDetails): Error in MySQL: " . $this->connect->error);
+      $this->result = $r;
       return $result->fetch_object();
     }
     
-    public function createTable($table, $names, $types, $lenghts, $nulls, $others = []) {
-      $parameters = $this->getParameters($names, $types, $lengths, $nulls, $others);
+    public function createTable($table, $names, $types, $lenghts, $nulls, $primary = NULL, $uniques, $others = []) {
+      $parameters = $this->getParameters($names, $types, $lengths, $nulls, $uniques, $others);
       $valueString = implode(",\n", $parameters);
       return $this->query("
         CREATE TABLE `$table` ($valueString)
+        " . empty($primary) ? NULL : ", PRIMARY KEY ($primary)" . "
       ");
     }
     
@@ -290,9 +376,9 @@
             $l = $lenghts[$k];
             $n = $nulls[$k] ? "NULL" : "NOT NULL";
             if(empty($l))
-              $r[] = "$v $t $n";
+              $r[] = "$v $t $n" . (in_array($v, $uniques) ? NULL : " UNIQUE") . " $o";
             else
-              $r[] = "$v $t($v) $n";
+              $r[] = "$v $t($l) $n" . (in_array($v, $uniques) ? NULL : " UNIQUE") . " $o";
           };
           return $r;
         };
@@ -301,46 +387,45 @@
     }
     
     private function getBool($a, $and, $join = false) {
-      if(is_array($a)) {
-        $r = NULL;
-        foreach($a as $k => $v) {
-          if(is_array($v)) {
-            foreach($v as $k2 => $v2) {
-              if($v2[0]=="`" && end(str_split($v2))=="`")
-                $col = true;
-              $v3 = $this->escapeString($v2);
-              $r.= "`" . $this->escapeString($k) . "`";
-              if(is_numeric($v3)) {
-                $r.= " = ";
-                $v3 = intval($v3);
-              }
-              else
-                $r.= " LIKE ";
-              $r.= ($join || $col) ? "`$v3`" : "'$v3'";
-              $r.= $and ? " AND " : " OR ";
-            };
-            return rtrim($r, $and ? " AND " : " OR ");
-          }
-          else {
+      if(!is_array($a))
+        return $a;
+      $r = NULL;
+      foreach($a as $k => $v) {
+        if(is_array($v)) {
+          foreach($v as $k2 => $v2) {
             $col = false;
-            if($v[0]=="`" && end(str_split($v))=="`")
+            if($v2[0]=="`" && end(str_split($v2))=="`")
               $col = true;
-            $v = $this->escapeString($v);
-            $r.= "`" . $this->escapeString($k) . "`";
-            if(is_numeric($v)) {
+            $v3 = $this->escape($v2);
+            $r.= "`" . $this->escape($k) . "`";
+            if(is_numeric($v3)) {
               $r.= " = ";
-              $v = (int) $v;
+              $v3 = intval($v3);
             }
             else
               $r.= " LIKE ";
-            $r.= ($join || $col) ? "`$v`" : "'$v'";
+            $r.= ($join || $col) ? "`$v3`" : "'$v3'";
             $r.= $and ? " AND " : " OR ";
           };
           return rtrim($r, $and ? " AND " : " OR ");
         }
-      }
-      else
-        return $a;
+        else {
+          $col = false;
+          if($v[0]=="`" && end(str_split($v))=="`")
+            $col = true;
+          $v = $this->escape($v);
+          $r.= "`" . $this->escape($k) . "`";
+          if(is_numeric($v)) {
+            $r.= " = ";
+            $v = (int) $v;
+          }
+          else
+            $r.= " LIKE ";
+          $r.= ($join || $col) ? "`$v`" : "'$v'";
+          $r.= $and ? " AND " : " OR ";
+        };
+      };
+      return rtrim($r, $and ? " AND " : " OR ");
     }
     
     public function __wakeup() {
@@ -348,8 +433,9 @@
     }
     
     public function __destruct() {
-      @$this->result->free();
-      @$this->connect->close();
+      if($this->result instanceof mysqli_result)
+        $this->result->free();
+      $this->connect->close();
     }
   };
   function Smysql($host, $user, $password, $db, &$object = "return") {
