@@ -243,7 +243,7 @@
       foreach($array as $key => $value) {
         if($string!=NULL) 
           $string.= ", ";
-        $string.= $key . "='" . $this->escape($value) . "'";
+        $string.= "`" . $key . "`='" . $this->escape($value) . "'";
       };
       return $this->query("
         UPDATE `$table` SET $string WHERE $bool
