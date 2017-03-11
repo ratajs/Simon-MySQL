@@ -9,6 +9,7 @@
     protected $user;
     protected $password;
     protected $db;
+    protected $fncs = [];
     public function __construct($host = NULL, $user = NULL, $password = NULL, $database = NULL) {
       if(empty($host) && empty($user) && empty($password) && empty($database)) {
         if(!empty($this->host)) {
@@ -67,7 +68,7 @@
         trigger_error("Simon's MySQL error <strong>(" . $fnc . "):</strong> No database selected");
       $this->result = mysql_query($query, $this->connect);
       if(!$this->result)
-        trigger_error("Error in MySQL: " . mysql_error());
+        trigger_error("Simon's MySQL error <strong>(" . $fnc . "):</strong> Error in MySQL: " . mysql_error());
       return $this->result;
     }
     
@@ -76,6 +77,17 @@
         $q = str_replace("%" . $k, $this->escape($v), $q);
       };
       return $this->query($q, "Queryf");
+    }
+    
+    public function setFnc($name, $query) {
+      $this->fncs[$name] = $query;
+    }
+    
+    public function execFnc($name, $params = array()) {
+      if(isset($this->fncs[$name]))
+        $this->queryf($this->fncs[$name], $params);
+      else
+        trigger_error("Simon's MySQL error <strong>(fnc_" . $name . "):</strong> This function isn't defined");
     }
     
     public function dbList() {
