@@ -2,7 +2,7 @@
   /**
    * Version for PHP 5.4 and later versions.
   **/
- class SmysqlException extends Exception {};
+  class SmysqlException extends Exception {};
   set_exception_handler(function($e) {
     if($e instanceof SmysqlException) {
       trigger_error("<strong>Simon's MySQL error</strong> " . $e->getMessage());
@@ -17,6 +17,7 @@
     protected $user;
     protected $password;
     protected $db;
+    protected $fncs = [];
     public function __construct($host = NULL, $user = NULL, $password = NULL, $database = NULL) {
       if(empty($host) && empty($user) && empty($password) && empty($database)) {
         if(!empty($this->host)) {
@@ -72,7 +73,7 @@
     
     public function query($query, $fnc = "Query") {
       if(empty($this->db) && !in_array($fnc, ["__construct", "changeDB", "dbList"]))
-        throw new SmysqlException("(" . $fnc . "): No database selected");
+        throw new SmysqlException("(" . $fnc . "):</strong> No database selected");
       $this->result = $this->connect->query($query);
       if($this->connect->errno)
         throw new SmysqlException("(" . $fnc . "): Error in MySQL: " . $this->connect->error . " <strong>SQL command:</strong> " . $query);
@@ -84,6 +85,42 @@
         $q = str_replace("%" . $k, $this->escape($v), $q);
       };
       return $this->query($q, "Queryf");
+    }
+    
+    public function __set($name, $query) {
+      $this->fncs[$name] = $query;
+    }
+    
+    public function __get($name) {
+      return $this->fncs[$name];
+    }
+    
+    public function __call($name, $params) {
+      if(isset($params[0]) && is_array($params[0]))
+        $this->execFnc($name, $params[0]);
+      else
+        $this->execFnc($name);
+    }
+    
+    public function __isset($name) {
+      return isset($this->fncs[$name]);
+    }
+    
+    public function __unset($name) {
+      if(isset($this->fncs[$name]))
+        unset($this->fncs[$name]);
+      return true;
+    }
+    
+    public function setFnc($name, $query) {
+      $this->fncs[$name] = $query;
+    }
+    
+    public function execFnc($name, $params = []) {
+      if(isset($this->fncs[$name]))
+        $this->queryf($this->fncs[$name], $params);
+      else
+        throw new SmysqlException("(fnc_" . $name . "): This function isn't defined");
     }
     
     public function dbList() {
