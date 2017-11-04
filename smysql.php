@@ -73,7 +73,7 @@
     
     public function query($query, $fnc = "Query") {
       if(empty($this->db) && !in_array($fnc, ["__construct", "changeDB", "dbList"]))
-        throw new SmysqlException("(" . $fnc . "):</strong> No database selected");
+        throw new SmysqlException("(" . $fnc . "): No database selected");
       $this->result = $this->connect->query($query);
       if($this->connect->errno)
         throw new SmysqlException("(" . $fnc . "): Error in MySQL: " . $this->connect->error . " <strong>SQL command:</strong> " . $query);
