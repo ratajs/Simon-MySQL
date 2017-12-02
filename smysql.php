@@ -99,7 +99,7 @@
       if(isset($params[0]) && is_array($params[0]))
         $this->execFnc($name, $params[0]);
       else
-        $this->execFnc($name);
+        $this->execFnc($name, $params);
     }
     
     public function __isset($name) {
@@ -198,7 +198,7 @@
     public function select($table, $order = NULL, $orderType = "ASC", $cols = ["*"]) {
       $colsValue = implode(", ", $cols);
       if(!empty($order))
-        $order = "ORDER BY '" . $order . "' $orderType";
+        $order = "ORDER BY '" . $order . "'" . $orderType;
       return $this->query("
         SELECT $colsValue FROM `$table` $order
       ", "select");
@@ -208,7 +208,7 @@
       $bool = $this->getBool($array, $all);
       $colsValue = implode(", ", $cols);
       if(!empty($order))
-        $order = "ORDER BY '" . $order . "' $orderType";
+        $order = "ORDER BY '" . $order . "'" . $orderType;
       return $this->query("
         SELECT $colsValue FROM `$table` WHERE $bool $order
       ", $exists ? "exists" : "selectWhere");
@@ -480,5 +480,47 @@
       return new Smysql($host, $user, $password, $db);
     else
       $object = new Smysql($host, $user, $password, $db);
+  };
+  
+  if(!function_exists("mysql_connect")) {
+    function mysql_connect($h, $u, $p, $db = NULL) {
+      return new Smysql($h, $u, $p, $db);
+    };
+    function mysql_select_db($c, $db) {
+      if($c instanceof Smysql)
+        $c->changeDB($db);
+      else
+        trigger_error("Invalid connection ID");
+    };
+    function mysql_query($q, $c) {
+      if($c instanceof Smysql)
+        return $c->query($q);
+      else
+        trigger_error("Invalid connection ID");
+    };
+    function mysql_real_escape_string($s, $c) {
+      if($c instanceof Smysql)
+        $c->escape($s);
+      else
+        trigger_error("Invalid connection ID");
+    };
+    function mysql_fetch_object($r, $c) {
+      if($c instanceof Smysql)
+        return $c->fetch($r);
+      else
+        trigger_error("Invalid connection ID");
+    };
+    function mysql_fetch_array($r, $c) {
+      if($c instanceof Smysql)
+        return $c->fetchArray($r);
+      else
+        trigger_error("Invalid connection ID");
+    };
+    function mysql_close($c) {
+      if($c instanceof Smysql)
+        $c->__destruct();
+      else
+        trigger_error("Invalid connection ID");
+    };
   };
 ?>
