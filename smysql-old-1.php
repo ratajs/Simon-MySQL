@@ -79,17 +79,6 @@
       return $this->query($q, "Queryf");
     }
     
-    public function setFnc($name, $query) {
-      $this->fncs[$name] = $query;
-    }
-    
-    public function execFnc($name, $params = array()) {
-      if(isset($this->fncs[$name]))
-        $this->queryf($this->fncs[$name], $params);
-      else
-        trigger_error("Simon's MySQL error <strong>(fnc_" . $name . "):</strong> This function isn't defined");
-    }
-    
     public function dbList() {
       $result = $this->result;
       $ld = mysql_list_dbs($this->connect);
