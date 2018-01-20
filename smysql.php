@@ -1,6 +1,6 @@
 <?php
   /**
-   * Version for PHP 5.4 and later versions.
+  * Version for PHP 5.4 and later versions.
   **/
   class SmysqlException extends Exception {};
   set_exception_handler(function($e) {
@@ -80,11 +80,11 @@
       return $this->result;
     }
     
-    public function queryf($q, $a) {
+    public function queryf($q, $a, $fnc = "Queryf") {
       foreach($a as $k => $v) {
         $q = str_replace("%" . $k, $this->escape($v), $q);
       };
-      return $this->query($q, "Queryf");
+      return $this->query($q, $fnc);
     }
     
     public function __set($name, $query) {
@@ -118,9 +118,9 @@
     
     public function execFnc($name, $params = []) {
       if(isset($this->fncs[$name]))
-        $this->queryf($this->fncs[$name], $params);
+        $this->queryf($this->fncs[$name], $params, $name);
       else
-        throw new SmysqlException("(fnc_" . $name . "): This function isn't defined");
+        throw new SmysqlException("(" . $name . "): This function isn't defined");
     }
     
     public function dbList() {
@@ -463,6 +463,12 @@
         };
       };
       return rtrim($r, $and ? " AND " : " OR ");
+    }
+
+    public function __sleep() {
+      if($this->result instanceof mysqli_result)
+        $this->result->free();
+      $this->connect->close();
     }
     
     public function __wakeup() {
