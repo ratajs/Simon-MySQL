@@ -1,7 +1,7 @@
 <?php
   class SmysqlException extends Exception {
     function __construct($e, $code = 0, Exception $previous = NULL) {
-      $this->message = "<strong>Simon's MySQL error</strong> " . $e . " in <strong>" . parent::getFile() . "</strong> on line <strong>" . parent::getLine() . "</strong>";
+      $this->message = "<strong>Simon's MySQL error</strong> " . $e . " in <strong>" . end(parent::getTrace())['file'] . "</strong> on line <strong>" . end(parent::getTrace())['line'] . "</strong>";
     }
     function __toString() {
       trigger_error($this->message, E_USER_ERROR);
@@ -27,7 +27,7 @@
     const FETCH_OBJECT = 256;
     const FETCH_ARRAY = 512;
     const FETCH_ALL = 1024;
-    const ALLWAYS_ARRAY = 2048;
+    const ALWAYS_ARRAY = 2048;
     public function __construct($host = NULL, $user = NULL, $password = NULL, $database = NULL) {
       if(empty($host) && empty($user) && empty($password) && empty($database)) {
         if(!empty($this->host)) {
@@ -58,8 +58,8 @@
       } catch(PDOException $e) {
         throw new SmysqlException("(__construct): Can't connect to MySQL: " . $e->getMessage());
       }
-      if(!$this->connect->errorCode() && $this->connect) {
-        throw new SmysqlException("(__construct): Can't select database MySQL");
+      if($this->connect->errorCode() && $this->connect) {
+        throw new SmysqlException("(__construct): Can't select database MySQL (" . $this->connect->errorInfo()[2] . ")");
         $this->connect->close();
       };
     }
@@ -71,7 +71,15 @@
         };
         return $r;
       };
-      return $this->connect->quote($string);
+      $quote = $this->connect->quote($string);
+      $quoteA = str_split($quote);
+      unset($quoteA[0]);
+      unset($quoteA[count($quoteA)]);
+      $quote = NULL;
+      foreach($quoteA as $k => $v) {
+        $quote.= $v;
+      };
+      return $quote;
     }
 
     public function reload() {
@@ -82,8 +90,8 @@
       if(empty($this->db) && !in_array($fnc, ["__construct", "changeDB", "dbList"]))
         throw new SmysqlException("(" . $fnc . "): No database selected");
       $this->result = $this->connect->query($query);
-      if($this->connect->errorCode())
-        throw new SmysqlException("(" . $fnc . "): Error in MySQL: " . $this->connect->errorInfo() . " <strong>SQL command:</strong> " . $query);
+      if(!$this->result)
+        throw new SmysqlException("(" . $fnc . "): Error in MySQL: " . $this->connect->errorInfo()[2] . " <strong>SQL command:</strong> " . $query);
       return $this->result;
     }
 
@@ -147,7 +155,7 @@
       $result = $this->result;
       $this->query("SHOW TABLES FROM $this->db", "tableList");
       $r = [];
-      while($f = $this->fetchArray()) {
+      while($f = $this->fetch(FETCH_ARRAY)) {
         $r[] = $f[0];
       };
       $this->result = $result;
@@ -163,21 +171,19 @@
       return $charset;
     }
 
-    public function fetch($id = false, $flags = 256) {
+    public function fetch($flags = 256, $id = false) {
       if($id===false)
-        $return = $this->result->fetch_object();
+        $id = $this->result;
       if(boolval($flags & self::FETCH_OBJECT))
         $return =  $id->fetchObject();
       elseif(boolval($flags & self::FETCH_ARRAY))
         $return =  $id->fetch();
       elseif(boolval($flags & self::FETCH_ALL)) {
         $return = [];
-        while($row = $this->fetch($id)) {
+        while($row = $this->fetch(self::FETCH_OBJECT, $id)) {
           $return[] = $row;
         };
-      }
-      else
-        $return =  $id->fetchObject();
+      };
       return $return;
     }
 
@@ -209,15 +215,15 @@
       ", "select");
     }
 
-    public function selectWhere($table, $array, $order = NULL, $cols = ["*"], $flags = 129, $exists = false) {
+    public function selectWhere($table, $array, $order = NULL, $cols = ["*"], $flags = 129, $name = "selectWhere") {
       $all = boolval($flags & self::QUERY_ALL);
       $bool = $this->getBool($array, $all);
       $colsValue = implode(", ", $cols);
       if(!empty($order))
-        $order = "ORDER BY '" . $order . "'" . (boolval($orderType & self::ORDER_DESC) ? "DESC" : "ASC");
+        $order = "ORDER BY '" . $order . "'" . (boolval($flags & self::ORDER_DESC) ? "DESC" : "ASC");
       return $this->query("
         SELECT $colsValue FROM `$table` WHERE $bool $order
-      ", $exists ? "exists" : "selectWhere");
+      ", $name);
     }
 
     public function selectJoin($table, $join, $array, $order = NULL, $cols = ["*"], $flags = 133) {
@@ -241,9 +247,9 @@
       ", "selectJoin");
     }
 
-    public function exists($table, $array, $flags = 128) {
+    public function exists($table, $array, $flags = 129, $name = "exists") {
       $all = boolval($flags & self::QUERY_ALL);
-      $this->selectWhere($table, $array, $all, NULL, "ASC", ["*"], true);
+      $this->selectWhere($table, $array, NULL, ["*"], $flags, $name);
       $noFetch = !$this->fetch();
       return !$noFetch;
     }
@@ -326,21 +332,21 @@
     public function selectAll($table) {
       $r = $this->result;
       $this->select($table);
-      $f = $this->fetchAll();
+      $f = $this->fetch(self::FETCH_ALL);
       $this->result = $r;
       return $f;
     }
 
-    public function fetchWhere($table, $bool, $flags = 128) {
+    public function fetchWhere($table, $bool, $flags = 129) {
       $all = boolval($flags & self::QUERY_ALL);
       $r = $this->result;
-      $this->selectWhere($table, $bool, $all);
+      $this->selectWhere($table, $bool, $flags);
       $f = $this->fetch();
       $this->result = $r;
       return $f;
     }
 
-    public function read($table, $bool = [], $flags = 128) {
+    public function read($table, $bool = [], $flags = 129) {
       $all = boolval($flags & self::QUERY_ALL);
       $r = $this->result;
       $f = new stdClass();
@@ -349,14 +355,14 @@
         $f = $this->selectAll($table);
         $this->result = $r;
       }
-      elseif(!$this->exists($table, $bool, $all))
+      elseif(!$this->exists($table, $bool, $flags, "read"))
         if(boolval($flags & self::ALWAYS_ARRAY))
           return [];
         else
           return false;
       else {
         $this->selectWhere($table, $bool, $all);
-        $f = $this->fetchAll();
+        $f = $this->fetch(self::FETCH_ALL);
       };
       if($f===new stdClass() && !boolval($flags & self::ALWAYS_ARRAY))
         return false;
@@ -426,9 +432,14 @@
         if(is_array($v)) {
           foreach($v as $k2 => $v2) {
             $col = false;
-            if($v2[0]=="`" && end(str_split($v2))=="`")
+            if($v2[0]=="`" && end(str_split($v2))=="`") {
+              $va = str_split($v);
+              unset($va[0]);
+              unset($va[count($va-1)]);
               $col = true;
-            $v3 = $this->escape($v2);
+            };
+            if(!is_numeric($v2))
+              $v3 = $this->escape($v2);
             $r.= "`" . $this->escape($k) . "`";
             if(is_numeric($v3)) {
               $r.= " = ";
@@ -436,24 +447,35 @@
             }
             else
               $r.= " LIKE ";
-            $r.= ($join || $col) ? "`$v3`" : "'$v3'";
+            if(is_numeric($v3))
+              $r.= $v;
+            else
+              $r.= ($join || $col) ? "`$v3`" : "'$v3'";
             $r.= $and ? " AND " : " OR ";
           };
           return rtrim($r, $and ? " AND " : " OR ");
         }
         else {
           $col = false;
-          if($v[0]=="`" && end(str_split($v))=="`")
+          if($v[0]=="`" && end(str_split($v))=="`") {
+            $va = str_split($v);
+            unset($va[0]);
+            unset($va[count($va)]);
             $col = true;
-          $v = $this->escape($v);
+          };
+          if(!is_numeric($v))
+            $v = $this->escape($v);
           $r.= "`" . $this->escape($k) . "`";
           if(is_numeric($v)) {
             $r.= " = ";
-            $v = (int) $v;
+            $v = intval($v);
           }
           else
             $r.= " LIKE ";
-          $r.= ($join || $col) ? "`$v`" : "'$v'";
+          if(is_numeric($v))
+            $r.= $v;
+          else
+            $r.= ($join || $col) ? "`$v`" : "'$v'";
           $r.= $and ? " AND " : " OR ";
         };
       };
@@ -484,40 +506,40 @@
 
   if(!function_exists("mysql_connect")) {
     function mysql_connect($h, $u, $p, $db = NULL) {
-      return new Smysql\Smysql($h, $u, $p, $db);
+      return new Smysql($h, $u, $p, $db);
     };
     function mysql_select_db($c, $db) {
-      if($c instanceof Smysql\Smysql)
+      if($c instanceof Smysql)
         $c->changeDB($db);
       else
         trigger_error("Invalid connection ID");
     };
     function mysql_query($q, $c) {
-      if($c instanceof Smysql\Smysql)
+      if($c instanceof Smysql)
         return $c->query($q);
       else
         trigger_error("Invalid connection ID");
     };
     function mysql_real_escape_string($s, $c) {
-      if($c instanceof Smysql\Smysql)
+      if($c instanceof Smysql)
         $c->escape($s);
       else
         trigger_error("Invalid connection ID");
     };
     function mysql_fetch_object($r, $c) {
-      if($c instanceof Smysql\Smysql)
+      if($c instanceof Smysql)
         return $c->fetch($r);
       else
         trigger_error("Invalid connection ID");
     };
     function mysql_fetch_array($r, $c) {
-      if($c instanceof Smysql\Smysql)
+      if($c instanceof Smysql)
         return $c->fetchArray($r);
       else
         trigger_error("Invalid connection ID");
     };
     function mysql_close($c) {
-      if($c instanceof Smysql\Smysql)
+      if($c instanceof Smysql)
         $c->__destruct();
       else
         trigger_error("Invalid connection ID");
