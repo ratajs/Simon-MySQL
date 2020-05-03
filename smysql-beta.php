@@ -242,7 +242,7 @@
       ", $flags, $name);
     }
 
-    public function selectJoin($table, $order, $join, $array, $cols = ["*"], $flags = 133) {
+    public function selectJoin($table, $join, $array, $order = "", $cols = ["*"], $flags = 133) {
       $all = boolval($flags & self::QUERY_ALL);
       switch(true) {
         case boolval($flags & self::JOIN_INNER): $jt = "INNER"; break;
@@ -263,7 +263,7 @@
       ", $flags, "selectJoin");
     }
 
-    public function selectJoinWhere($table, $order, $join, $array, $where, $cols = ["*"], $flags = 133) {
+    public function selectJoinWhere($table, $join, $array, $where, $order = "", $cols = ["*"], $flags = 133) {
       $all = boolval($flags & self::QUERY_ALL);
       switch(true) {
         case boolval($flags & self::JOIN_INNER): $jt = "INNER"; break;
