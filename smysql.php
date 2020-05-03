@@ -431,7 +431,7 @@
         if(is_array($v)) {
           foreach($v as $k2 => $v2) {
             $col = false;
-            if($v2[0]=="`" && end(str_split($v2))=="`")
+            if(str_split($v2)[0]=="`" && end(str_split($v2))=="`")
               $col = true;
             $v3 = $this->escape($v2);
             $r.= "`" . $this->escape($k) . "`";
@@ -448,7 +448,7 @@
         }
         else {
           $col = false;
-          if($v[0]=="`" && end(str_split($v))=="`")
+          if(str_split($v)[0]=="`" && end(str_split($v))=="`")
             $col = true;
           $v = $this->escape($v);
           $r.= "`" . $this->escape($k) . "`";
