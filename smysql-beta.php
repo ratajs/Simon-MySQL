@@ -223,6 +223,10 @@
     }
 
     public function select($table, $order = "", $cols = ["*"], $flags = 129) {
+			foreach($cols as $k => $v) {
+				if(!is_numeric($k))
+					$cols[$k] = $v . " AS " . $k;
+			};
       $colsValue = implode(", ", $cols);
       if(!empty($order))
         $order = "ORDER BY `" . $order . "`" . (boolval($flags & self::ORDER_DESC) ? "DESC" : "ASC");
@@ -234,6 +238,10 @@
     public function selectWhere($table, $array, $order = "", $cols = ["*"], $flags = 129, $name = "selectWhere") {
       $all = boolval($flags & self::QUERY_ALL);
       $bool = $this->getBool($array, $all);
+			foreach($cols as $k => $v) {
+				if(!is_numeric($k))
+					$cols[$k] = $v . " AS " . $k;
+			};
       $colsValue = implode(", ", $cols);
       if(!empty($order))
         $order = "ORDER BY `" . $order . "`" . (boolval($flags & self::ORDER_DESC) ? "DESC" : "ASC");
@@ -252,6 +260,10 @@
         default: $jt = "INNER";
       };
       $bool = $this->getBool($array, $all, true);
+			foreach($cols as $k => $v) {
+				if(!is_numeric($k))
+					$cols[$k] = $v . " AS " . $k;
+			};
       $colsValue = implode(", ", $cols);
       if(!empty($order))
         $order = "ORDER BY `" . $order . "` " . (boolval($flags & self::ORDER_DESC) ? "DESC" : "ASC");
@@ -274,6 +286,10 @@
       };
       $bool = $this->getBool($array, $all, true);
       $whereBool = $this->getBool($where, $all);
+			foreach($cols as $k => $v) {
+				if(!is_numeric($k))
+					$cols[$k] = $v . " AS " . $k;
+			};
       $colsValue = implode(", ", $cols);
       if(!empty($order))
         $order = "ORDER BY `" . $order . "` " . (boolval($flags & self::ORDER_DESC) ? "DESC" : "ASC");
@@ -594,7 +610,7 @@
         foreach($f as $k => $v) {
           $h.= "<tr>";
           foreach($v as $val) {
-            $h.= "<td style=\"border: 1px solid black; padding: 5px; text-align: center;\"><pre>" . str_replace(["\n", "\r"], "", nl2br(htmlspecialchars($val, ENT_QUOTES, "UTF-8"))) . "</pre></td>";
+            $h.= "<td style=\"border: 1px solid black; padding: 5px; text-align: center;\">" . ($val===NULL ? "<em>NULL</em>" : ("<pre>" . str_replace(["\n", "\r"], "", nl2br(htmlspecialchars($val, ENT_QUOTES, "UTF-8"))) . "</pre>")) . "</td>";
           };
           $h.= "<tr>";
         };
